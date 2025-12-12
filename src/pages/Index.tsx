@@ -2,10 +2,12 @@ import { useState } from "react";
 import { ScreenshotUpload } from "@/components/ScreenshotUpload";
 import { CodeInput } from "@/components/CodeInput";
 import { AnalysisResult } from "@/components/AnalysisResult";
+import { TraditionalAnalysisResult } from "@/components/TraditionalAnalysisResult";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { Bug, Terminal, Code, Zap, Loader2, Sparkles } from "lucide-react";
+import { Bug, Terminal, Code, Zap, Loader2, Sparkles, Shield, Brain } from "lucide-react";
+import { analyzeCode, type TraditionalAnalysisResult as TraditionalResult } from "@/lib/traditional-analyzer";
 
 interface AnalysisData {
   rootCause: string;
@@ -23,12 +25,16 @@ interface AnalysisData {
   summary: string;
 }
 
+type AnalysisMode = "ai" | "traditional";
+
 const Index = () => {
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("ai");
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [terminalLogs, setTerminalLogs] = useState("");
   const [codeSnippet, setCodeSnippet] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<AnalysisData | null>(null);
+  const [traditionalAnalysis, setTraditionalAnalysis] = useState<TraditionalResult | null>(null);
 
   const hasInput = screenshot || terminalLogs.trim() || codeSnippet.trim();
 
@@ -43,8 +49,22 @@ const Index = () => {
     }
 
     setIsAnalyzing(true);
-    setAnalysis(null);
+    setAiAnalysis(null);
+    setTraditionalAnalysis(null);
 
+    if (analysisMode === "traditional") {
+      // Traditional analysis - runs locally, no AI
+      const result = analyzeCode(codeSnippet, terminalLogs);
+      setTraditionalAnalysis(result);
+      setIsAnalyzing(false);
+      toast({
+        title: "Traditional analysis complete",
+        description: `Found ${result.stats.errors} errors, ${result.stats.warnings} warnings, ${result.stats.info} info messages.`,
+      });
+      return;
+    }
+
+    // AI Analysis
     try {
       const { data, error } = await supabase.functions.invoke("analyze-debug", {
         body: {
@@ -60,7 +80,7 @@ const Index = () => {
         throw new Error(data.error);
       }
 
-      setAnalysis(data);
+      setAiAnalysis(data);
       toast({
         title: "Analysis complete",
         description: "Check out the debugging insights below.",
@@ -81,7 +101,8 @@ const Index = () => {
     setScreenshot(null);
     setTerminalLogs("");
     setCodeSnippet("");
-    setAnalysis(null);
+    setAiAnalysis(null);
+    setTraditionalAnalysis(null);
   };
 
   return (
@@ -117,6 +138,49 @@ const Index = () => {
           </p>
         </section>
 
+        {/* Mode Toggle */}
+        <div className="flex justify-center mb-8">
+          <div className="glass-panel rounded-full p-1 inline-flex gap-1">
+            <button
+              onClick={() => setAnalysisMode("ai")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                analysisMode === "ai"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Brain className="w-4 h-4" />
+              AI Analysis
+            </button>
+            <button
+              onClick={() => setAnalysisMode("traditional")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                analysisMode === "traditional"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Shield className="w-4 h-4" />
+              Traditional (Private)
+            </button>
+          </div>
+        </div>
+
+        {/* Mode Description */}
+        <div className="text-center mb-8">
+          {analysisMode === "ai" ? (
+            <p className="text-sm text-muted-foreground">
+              <Sparkles className="w-4 h-4 inline mr-1" />
+              Deep analysis with Gemini Pro • Supports screenshots, logs & code
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              <Shield className="w-4 h-4 inline mr-1" />
+              Pattern-based analysis • No code sent to external services • Privacy-first
+            </p>
+          )}
+        </div>
+
         <div className="grid lg:grid-cols-2 gap-8">
           {/* Input Section */}
           <div className="space-y-6">
@@ -132,14 +196,16 @@ const Index = () => {
               )}
             </div>
 
-            {/* Screenshot Upload */}
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <span className="w-2 h-2 rounded-full bg-primary" />
-                Screenshot
-              </label>
-              <ScreenshotUpload value={screenshot} onChange={setScreenshot} />
-            </div>
+            {/* Screenshot Upload - only for AI mode */}
+            {analysisMode === "ai" && (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <span className="w-2 h-2 rounded-full bg-primary" />
+                  Screenshot
+                </label>
+                <ScreenshotUpload value={screenshot} onChange={setScreenshot} />
+              </div>
+            )}
 
             {/* Terminal Logs */}
             <CodeInput
@@ -172,10 +238,15 @@ const Index = () => {
                   <Loader2 className="w-5 h-5 animate-spin" />
                   Analyzing...
                 </>
+              ) : analysisMode === "ai" ? (
+                <>
+                  <Brain className="w-5 h-5" />
+                  Analyze with AI
+                </>
               ) : (
                 <>
-                  <Bug className="w-5 h-5" />
-                  Analyze & Debug
+                  <Shield className="w-5 h-5" />
+                  Run Traditional Analysis
                 </>
               )}
             </Button>
@@ -184,22 +255,34 @@ const Index = () => {
           {/* Results Section */}
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" />
+              {analysisMode === "ai" ? (
+                <Sparkles className="w-5 h-5 text-primary" />
+              ) : (
+                <Shield className="w-5 h-5 text-primary" />
+              )}
               Analysis Results
             </h3>
 
-            {analysis ? (
-              <AnalysisResult analysis={analysis} />
+            {aiAnalysis && analysisMode === "ai" ? (
+              <AnalysisResult analysis={aiAnalysis} />
+            ) : traditionalAnalysis && analysisMode === "traditional" ? (
+              <TraditionalAnalysisResult analysis={traditionalAnalysis} />
             ) : (
               <div className="glass-panel glow-border rounded-lg p-12 flex flex-col items-center justify-center min-h-[400px] text-center">
                 <div className="p-4 bg-muted rounded-full mb-4">
-                  <Bug className="w-10 h-10 text-muted-foreground" />
+                  {analysisMode === "ai" ? (
+                    <Brain className="w-10 h-10 text-muted-foreground" />
+                  ) : (
+                    <Shield className="w-10 h-10 text-muted-foreground" />
+                  )}
                 </div>
                 <h4 className="text-lg font-medium text-foreground mb-2">
                   No analysis yet
                 </h4>
                 <p className="text-muted-foreground max-w-sm">
-                  Add your debugging context on the left and click "Analyze & Debug" to get AI-powered insights.
+                  {analysisMode === "ai"
+                    ? "Add your debugging context and click 'Analyze with AI' for deep insights."
+                    : "Add code or logs and click 'Run Traditional Analysis' for pattern-based checks."}
                 </p>
               </div>
             )}
