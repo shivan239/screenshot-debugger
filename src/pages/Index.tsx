@@ -3,6 +3,7 @@ import { ScreenshotUpload } from "@/components/ScreenshotUpload";
 import { CodeInput } from "@/components/CodeInput";
 import { AnalysisResult } from "@/components/AnalysisResult";
 import { TraditionalAnalysisResult } from "@/components/TraditionalAnalysisResult";
+import { GitHubWorkflowDownload } from "@/components/GitHubWorkflowDownload";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -288,6 +289,13 @@ const Index = () => {
             )}
           </div>
         </div>
+
+        {/* GitHub Actions Workflow - Only show in traditional mode */}
+        {analysisMode === "traditional" && (
+          <section className="mt-12">
+            <GitHubWorkflowDownload />
+          </section>
+        )}
 
         {/* Features */}
         <section className="mt-16 grid md:grid-cols-3 gap-6">
